@@ -1,13 +1,15 @@
 const {google} = require("googleapis")
 const fs = require("fs")
 const path = require("path")
-const readline = require("readline")
+const http = require("http")
+const url = require("url")
 
 const SCOPES = ["https://www.googleapis.com/auth/drive.file"]
 const TOKEN_PATH = "token.json"
+const CREDENTIALS_PATH = "credentials.json"
 
 // Load client secret from local file
-fs.readFile("credentials.json",(err, content) => {
+fs.readFile(CREDENTIALS_PATH,(err, content) => {
     if (err) {
         return console.error("Error loading client secret file", err)
     }
@@ -32,31 +34,39 @@ function authorize(credentials, callback) {
 function getAccessToken(oAuth2Client, callback) {
     const authUrl = oAuth2Client.generateAuthUrl({
         access_type: "offline",
-        scope: SCOPES
+        scope: SCOPES,
+        response_type: "code"
     })
-    
     console.log("Authorize this app by visiting this url:", authUrl)
-    const rl = readline.createInterface({
-        input: process.stdin,
-        output: process.stdout
-    })
-    rl.question("Enter the code from that page here:", (code) => {
-        rl.close()
-        oAuth2Client.getToken(code, (err, token) => {
-            if (err) {
-                return console.error("Error retrieving access token", err)
-            }
-            oAuth2Client.setCredentials(token)
-            // Store the token to disc for later program executions
-            fs.writeFile(TOKEN_PATH, JSON.stringify(token), (err) => {
+    //! Set up a simple local server to handle the redirect
+    const server = http.createServer((req, res) => {
+        const query = new url.URL(req.url, "http://localhost").searchParams
+        const code = query.get("code")
+        if (code) {
+            res.end("Authorization successful! You can close this window.");
+            server.close();
+            oAuth2Client.getToken(code, (err, token) => {
                 if (err) {
-                    console.log(err)
+                    return console.error("Error retrieving access token", err);
+                } else {
+                    oAuth2Client.setCredentials(token);
                 }
-                console.log("Token stored to: ", TOKEN_PATH)
-            })
-            callback(oAuth2Client)
-        })
-    })
+                // Save the token to disk for later use
+                fs.writeFile(TOKEN_PATH, JSON.stringify(token), (err) => {
+                    if (err) {
+                        console.error("Error saving token", err);
+                    } else {
+                        console.log("Token stored to", TOKEN_PATH);
+                    }
+                });
+                callback(oAuth2Client);
+            });
+        } else {
+        res.end("No authorization code found.");
+        }
+    }).listen(3000, () => {
+        console.log("Listening on http://localhost:3000 for authorization code.");
+    });
 }
 
 // Create CSV File
