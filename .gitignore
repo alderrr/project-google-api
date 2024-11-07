@@ -1,5 +1,6 @@
 LOG
 node_modules
 credentials.json
+credentials_OAUTH2.json
 token.json
 example.csv
